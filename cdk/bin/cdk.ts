@@ -1,5 +1,6 @@
 #!/opt/homebrew/opt/node/bin/node
 import * as cdk from 'aws-cdk-lib/core';
+import { AwsSolutionsChecks } from 'cdk-nag';
 import { CdkStack } from '../lib/cdk-stack';
 
 const app = new cdk.App();
@@ -18,3 +19,8 @@ new CdkStack(app, 'CdkStack', {
 
   /* For more information, see https://docs.aws.amazon.com/cdk/latest/guide/environments.html */
 });
+
+// Run cdk-nag's AWS Solutions rule pack on every synth. Findings land in the
+// cloud assembly's policy-validation-report.json; use
+// cdk.Validations.of(scope).acknowledge({ id, reason }) for accepted risks.
+cdk.Validations.of(app).addPlugins(new AwsSolutionsChecks(app, { verbose: true }));
