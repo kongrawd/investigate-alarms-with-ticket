@@ -405,6 +405,41 @@ describe('ingress queue batches', () => {
   });
 });
 
+describe('failure shapes', () => {
+  it('wraps a thrown non-Error so the invocation still fails with an Error', async () => {
+    // Nothing in the SDK throws a bare value, but a fetch polyfill or a bad shim can.
+    globalThis.fetch = (async () => {
+      throw 'a bare string, not an Error';
+    }) as typeof fetch;
+
+    await expect(handler(snsEvent())).rejects.toBeInstanceOf(Error);
+  });
+
+  it('aggregates when several alarms in one batch fail', async () => {
+    // Non-queue paths cannot report per message, so every failure has to survive in one
+    // thrown error rather than the first one masking the rest.
+    webhookStatus = 500;
+    const event = snsBatchEvent([
+      metricAlarmNotification({ AlarmName: 'first', AlarmArn: `${ALARM_ARN}-1` }),
+      metricAlarmNotification({ AlarmName: 'second', AlarmArn: `${ALARM_ARN}-2` }),
+    ]);
+
+    await expect(handler(event)).rejects.toMatchObject({
+      name: 'AggregateError',
+      message: expect.stringContaining('2 of 2'),
+    });
+  });
+
+  it('stamps the audit trail with the Lambda request id when a context is passed', async () => {
+    const addContext = jest.spyOn(logger, 'addContext').mockImplementation(() => undefined);
+    const context = { awsRequestId: 'req-1', functionName: 'bridge' } as never;
+
+    await handler(alarmActionEvent(), context);
+
+    expect(addContext).toHaveBeenCalledWith(context);
+  });
+});
+
 describe('configuration', () => {
   it('rejects an unknown delivery mode rather than silently doing nothing', async () => {
     process.env['DELIVERY_MODE'] = 'carrier-pigeon';

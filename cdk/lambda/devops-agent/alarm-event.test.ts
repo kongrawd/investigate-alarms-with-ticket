@@ -90,6 +90,11 @@ describe('parseAlarmEvents', () => {
     expect(parseAlarmEvents({ source: 'aws.cloudwatch', alarmData: { alarmName: 'x' } })).toEqual([]);
   });
 
+  it('does not mistake a non-record payload for a queue batch', () => {
+    expect(parseAlarmEvents({ Records: 'not an array' })).toEqual([]);
+    expect(parseAlarmEvents({ Records: ['not an object'] })).toEqual([]);
+  });
+
   it('returns nothing for an event shape it does not recognize', () => {
     expect(parseAlarmEvents({ unexpected: true })).toEqual([]);
     expect(parseAlarmEvents(undefined)).toEqual([]);
@@ -111,6 +116,23 @@ describe('parseSqsRecord', () => {
     );
 
     expect(alarm).toMatchObject({ alarmName: ALARM_NAME, state: 'ALARM', sourceMessageId: 'm-7' });
+  });
+
+  it('names which part of the body it could not read', () => {
+    // Each message points at a different failure, because they mean different things to
+    // whoever is looking at the dead-letter queue.
+    expect(() => parseSqsRecord({ ...sqsRecord(), body: '"a string, not an object"' })).toThrow(
+      /not a JSON object/,
+    );
+    expect(() =>
+      parseSqsRecord({ ...sqsRecord(), body: JSON.stringify({ Type: 'Notification', Message: 'not json' }) }),
+    ).toThrow(/SNS envelope Message is not JSON/);
+    expect(() =>
+      parseSqsRecord({
+        ...sqsRecord(),
+        body: JSON.stringify({ Type: 'Notification', Message: '"a string"' }),
+      }),
+    ).toThrow(/SNS envelope Message is not a JSON object/);
   });
 
   it('throws on an unreadable body, so the message is reported and eventually dead-lettered', () => {
