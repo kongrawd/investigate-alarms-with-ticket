@@ -8,6 +8,7 @@ import {
   toIncidentEvent,
   type AlarmSummary,
 } from '../devops-agent/alarm-event';
+import { isSqsEvent } from '../devops-agent/alarm-payloads';
 import { startInvestigation } from '../devops-agent/api-client';
 import { audit, logger } from '../devops-agent/audit-log';
 import { env, requireEnv } from '../devops-agent/env';
@@ -204,11 +205,6 @@ function auditSummary(mode: DeliveryMode, counts: Counts): void {
     skipped: counts.skipped,
     failed: counts.failed,
   });
-}
-
-function isSqsEvent(event: unknown): event is { Records: SQSRecord[] } {
-  const records = (event as { Records?: unknown[] })?.Records;
-  return Array.isArray(records) && records.some((record) => (record as SQSRecord)?.eventSource === 'aws:sqs');
 }
 
 function deliveryMode(): DeliveryMode {
