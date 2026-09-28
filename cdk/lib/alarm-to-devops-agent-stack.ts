@@ -363,7 +363,10 @@ export class AlarmToDevOpsAgentStack extends Stack {
     new CfnOutput(this, 'BridgeFunctionName', { value: this.bridgeFunction.functionName });
     new CfnOutput(this, 'AlarmIngressQueueUrl', {
       value: this.alarmIngressQueue.queueUrl,
-      description: 'Subscribe any existing alarm SNS topic to this queue to fan it into the bridge',
+      description:
+        'Queue the bridge drains. To fan in a topic you already own, pass it in ' +
+        'additionalAlarmTopicArns — subscribing it by hand is not enough, because this ' +
+        "queue's policy allows SNS to send only from the topic ARNs passed that way",
     });
     new CfnOutput(this, 'DeadLetterQueueUrl', { value: this.deadLetterQueue.queueUrl });
   }
