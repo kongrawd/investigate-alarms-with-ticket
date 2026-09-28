@@ -51,12 +51,19 @@ export interface AuditRecord {
 /**
  * Audit event names. Dotted and low-cardinality so they group cleanly, and closed so a
  * query written against them keeps working.
+ *
+ * One name per situation, because a name is what a metric filter or an alarm keys on. A single
+ * message that cannot be read is `message.unreadable` — it is counted as failed and heads for the
+ * dead-letter queue. An invocation carrying nothing recognizable at all is `event.unrecognized`,
+ * which loses nothing and is retried by no one. Recording both under one name would leave an
+ * alarm on it unable to tell the two apart.
  */
 export type AuditEvent =
   | 'alarm.delivered'
   | 'alarm.skipped.duplicate'
   | 'alarm.skipped.state'
   | 'alarm.failed'
+  | 'message.unreadable'
   | 'event.unrecognized'
   | 'batch.completed';
 

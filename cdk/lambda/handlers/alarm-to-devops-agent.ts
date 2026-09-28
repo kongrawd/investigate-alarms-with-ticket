@@ -4,6 +4,7 @@ import type { Context, SQSRecord } from 'aws-lambda';
 import {
   incidentOf,
   parseAlarmEvents,
+  type UnreadableNotification,
   parseSqsRecord,
   toIncidentEvent,
   type AlarmSummary,
@@ -78,8 +79,23 @@ export const handler = async (event: unknown, context?: Context): Promise<Bridge
     return response;
   }
 
-  const alarms = parseAlarmEvents(event);
-  if (alarms.length === 0) {
+  const unreadable: UnreadableNotification[] = [];
+  const alarms = parseAlarmEvents(event, (dropped) => unreadable.push(dropped));
+
+  for (const dropped of unreadable) {
+    // Counted, so the summary cannot report success while a notification was thrown away.
+    // Not rethrown: these paths retry the whole notification, and a payload that cannot be
+    // parsed will not parse on the next attempt either — it would only duplicate whatever
+    // else arrived alongside it.
+    counts.failed += 1;
+    audit(
+      'message.unreadable',
+      { outcome: 'failed', deliveryMode: mode, sourceMessageId: dropped.sourceMessageId },
+      dropped.error,
+    );
+  }
+
+  if (alarms.length === 0 && unreadable.length === 0) {
     audit('event.unrecognized', { outcome: 'ignored', reason: 'no recognizable CloudWatch alarm in event' });
     return { delivered: 0, skipped: 0, batchItemFailures: [] };
   }
@@ -126,7 +142,7 @@ async function deliverSqsRecord(record: SQSRecord, mode: DeliveryMode, counts: C
     // the summary reported failed=0 while a message was quietly on its way to the DLQ.
     counts.failed += 1;
     audit(
-      'event.unrecognized',
+      'message.unreadable',
       { outcome: 'failed', deliveryMode: mode, sourceMessageId: record.messageId },
       error,
     );

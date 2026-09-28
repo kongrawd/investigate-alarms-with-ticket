@@ -41,13 +41,24 @@ export interface AlarmSummary {
  *    lambda.alarms.cloudwatch.amazonaws.com principal)
  *
  * Unrecognized records are skipped rather than thrown, so one malformed message in a
- * batch cannot block the rest.
+ * batch cannot block the rest. They are reported through `onUnreadable` instead of vanishing:
+ * a batch of one good and one bad notification used to return delivered=1, failed=0 and leave
+ * no record of the bad one anywhere.
  */
-export function parseAlarmEvents(event: unknown): AlarmSummary[] {
+export function parseAlarmEvents(
+  event: unknown,
+  onUnreadable: (dropped: UnreadableNotification) => void = () => undefined,
+): AlarmSummary[] {
   if (isSnsEvent(event)) {
     return event.Records.flatMap((record) => {
       const alarm = readNotification(record.Sns.Message);
-      return alarm ? [alarm] : [];
+      if (alarm) return [alarm];
+
+      onUnreadable({
+        sourceMessageId: record.Sns.MessageId,
+        error: new UnreadableAlarmPayload('SNS notification is not a readable CloudWatch alarm'),
+      });
+      return [];
     });
   }
 
@@ -80,6 +91,13 @@ function readNotification(message: string): AlarmSummary | undefined {
 }
 
 /** Thrown when a queue message cannot be read as an alarm, so the batch processor reports it. */
+/** A notification that could not be read, reported so it can be counted rather than dropped. */
+export interface UnreadableNotification {
+  /** SNS message id, which is also what the topic's own delivery logs key on. */
+  readonly sourceMessageId: string;
+  readonly error: UnreadableAlarmPayload;
+}
+
 export class UnreadableAlarmPayload extends Error {
   constructor(reason: string) {
     super(reason);

@@ -292,6 +292,35 @@ describe('audit trail', () => {
     });
   });
 
+  it('records a notification it could not read, rather than dropping it from the batch', async () => {
+    // This batch used to return delivered=1, failed=0, with nothing anywhere about the record
+    // that was thrown away — the same silent loss the queue path was fixed for.
+    process.env['DELIVERY_MODE'] = 'api';
+
+    const result = await handler(snsBatchEvent([metricAlarmNotification(), { hello: 'world' }]));
+
+    expect(recordFor(error, 'message.unreadable')).toMatchObject({
+      outcome: 'failed',
+      deliveryMode: 'api',
+      sourceMessageId: 'd2c3f4a5-6b78-49ca-8def-000000000001',
+      errorName: 'UnreadableAlarmPayload',
+    });
+    expect(recordFor(error, 'batch.completed')).toMatchObject({ outcome: 'failed', delivered: 1, failed: 1 });
+    // Not retried: the payload will not parse on a second attempt, and failing the invocation
+    // would redeliver the notification that did succeed.
+    expect(result).toEqual({ delivered: 1, skipped: 0, batchItemFailures: [] });
+  });
+
+  it('reports every unreadable notification when none of them can be read', async () => {
+    const result = await handler(snsBatchEvent([{ hello: 'world' }, { hello: 'again' }]));
+
+    expect(error.mock.calls.filter(([event]) => event === 'message.unreadable')).toHaveLength(2);
+    // event.unrecognized would claim nothing was lost, which is the opposite of what happened.
+    expect(recordFor(info, 'event.unrecognized')).toBeUndefined();
+    expect(recordFor(error, 'batch.completed')).toMatchObject({ outcome: 'failed', delivered: 0, failed: 2 });
+    expect(result).toEqual({ delivered: 0, skipped: 0, batchItemFailures: [] });
+  });
+
   it('closes every invocation with a summary, so counts are auditable without replay', async () => {
     await handler(snsBatchEvent([metricAlarmNotification(), metricAlarmNotification()]));
 
@@ -385,7 +414,10 @@ describe('ingress queue batches', () => {
     expect(records).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          event: 'event.unrecognized',
+          // Its own event name, not the one used when an invocation carries nothing
+          // recognizable: an alarm on this has to distinguish a message heading for the
+          // dead-letter queue from a payload that lost nothing.
+          event: 'message.unreadable',
           outcome: 'failed',
           sourceMessageId: 'm-bad',
           errorName: 'UnreadableAlarmPayload',
