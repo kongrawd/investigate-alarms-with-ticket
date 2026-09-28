@@ -5,7 +5,9 @@ module.exports = {
   // Unit tests live beside the code they cover under lambda/; test/ holds the CDK
   // template tests. Integration tests are excluded here and run from
   // jest.integration.config.js, so `npm test` is always hermetic.
-  roots: ['<rootDir>/lambda', '<rootDir>/test'],
+  // lib/ is listed so Jest crawls it when looking for untested files: without it, an
+  // uncovered construct is simply absent from the report and the threshold cannot see it.
+  roots: ['<rootDir>/lambda', '<rootDir>/lib', '<rootDir>/test'],
   testMatch: ['**/*.test.ts'],
   testPathIgnorePatterns: ['/node_modules/', '<rootDir>/test/integration/'],
   transform: {

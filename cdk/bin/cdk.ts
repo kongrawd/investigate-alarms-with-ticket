@@ -2,6 +2,7 @@
 import * as cdk from 'aws-cdk-lib/core';
 import { AwsSolutionsChecks } from 'cdk-nag';
 import { AlarmToDevOpsAgentStack, type DeliveryMode } from '../lib/alarm-to-devops-agent-stack';
+import { CustomSkillsStack } from '../lib/custom-skills-stack';
 
 const app = new cdk.App();
 
@@ -12,6 +13,12 @@ const app = new cdk.App();
  *                  [-c deliveryMode=webhook -c webhookSecretArn=<arn>]
  *                  [-c alarmPublisherAccountIds=111122223333,444455556666]
  *                  [-c additionalAlarmTopicArns=arn:aws:sns:...:team-a,arn:aws:sns:...:team-b]
+ *
+ * Skills from skills/ are uploaded only when asked for, since they change what the agent does:
+ *
+ *   npm run deploy:skills -- -c agentSpaceId=<id>
+ *     expands to: npx cdk deploy CustomSkillsStack -c enableCustomSkills=true -c agentSpaceId=<id>
+ *                 [-c skillsActive=false]   # agent types live in each SKILL.md
  *
  * Values can also be set once in cdk.json under "context".
  */
@@ -37,6 +44,20 @@ const commaList = (key: string): string[] =>
     .map((value) => value.trim())
     .filter(Boolean);
 
+/**
+ * Reads a boolean context value and rejects anything else, rather than comparing against the
+ * literal 'true'. Both of these flags decide whether skills go live, so `-c skillsActive=False`
+ * silently deploying them active — or `-c enableCustomSkills=True` silently building no stack at
+ * all — is worth a clear error instead.
+ */
+const booleanContext = (key: string): boolean | undefined => {
+  const value = context(key)?.toLowerCase();
+  if (value === undefined) return undefined;
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  throw new Error(`Context ${key} must be true or false, not '${context(key)}'`);
+};
+
 new AlarmToDevOpsAgentStack(app, 'AlarmToDevOpsAgentStack', {
   // Deploys to the account/Region of the current CLI credentials. The Agent Space may sit
   // in a different Region, and the alarms in different accounts entirely. Spread rather than
@@ -57,6 +78,19 @@ new AlarmToDevOpsAgentStack(app, 'AlarmToDevOpsAgentStack', {
   // several topics fan in without touching their existing subscribers.
   additionalAlarmTopicArns: commaList('additionalAlarmTopicArns'),
 });
+
+// Opt-in: uploading skills changes how the agent behaves, so it never rides along with a
+// pipeline deployment.
+if (booleanContext('enableCustomSkills') === true) {
+  new CustomSkillsStack(app, 'CustomSkillsStack', {
+    env: {
+      ...(process.env['CDK_DEFAULT_ACCOUNT'] ? { account: process.env['CDK_DEFAULT_ACCOUNT'] } : {}),
+      ...(process.env['CDK_DEFAULT_REGION'] ? { region: process.env['CDK_DEFAULT_REGION'] } : {}),
+    },
+    agentSpaceId,
+    ...(booleanContext('skillsActive') === false ? { active: false } : {}),
+  });
+}
 
 // Run cdk-nag's AWS Solutions rule pack on every synth. Findings land in the
 // cloud assembly's policy-validation-report.json; use
