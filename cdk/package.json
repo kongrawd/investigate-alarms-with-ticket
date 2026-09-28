@@ -32,6 +32,7 @@
     "@aws-sdk/client-secrets-manager": "^3.1140.0",
     "aws-cdk-lib": "^2.267.0",
     "cdk-nag": "^3.0.2",
-    "constructs": "^10.5.0"
+    "constructs": "^10.5.0",
+    "fflate": "^0.8.3"
   }
 }
