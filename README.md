@@ -144,6 +144,35 @@ description and agent types in its own `SKILL.md` frontmatter — read those to 
 deployed. Deploy in the Agent Space's Region, since the skills are created there. Add
 `-c skillsActive=false` to upload them inactive, for review before the agent loads them.
 
+### Bringing in skills from elsewhere
+
+One directory per skill under `skills/`, nothing to register. Copy fresh, never edit in place.
+
+```bash
+cd <repo root>   # skills/ sits beside cdk/
+
+# fetch — no clone, no .git; lands at skills/<name>/
+curl -sL https://codeload.github.com/<owner>/<repo>/tar.gz/refs/heads/main \
+  | tar -xz -C skills --strip-components=2 '<repo>-main/skills/<name>'
+# or: cp -R ../aiops-lab/skill/<name> skills/
+# or: npx degit@3 <owner>/<repo>/skills/<name>#v1 skills/<name>
+# or: npx skills@1.7.2 add <owner>/<repo> -a openclaw -s '*' -y   # its only skills/ target
+
+# prune — everything here is packaged
+rm -rf skills/<name>/{scripts,lib} skills/<name>/{README,CONTRIBUTING,AGENTS}.md
+find skills -name '.DS_Store' -delete
+
+cd cdk && npm run build && npm test -- skills
+npx cdk diff CustomSkillsStack -c enableCustomSkills=true -c agentSpaceId=<id>
+```
+
+Deploy with `-c skillsActive=false` first, then activate in the Operator Web App.
+
+`npm test -- skills` enforces what the specification does not: `name` matching the directory,
+a `description` of 100+ characters, `metadata.agent_types` as a one-line list (absent means
+every type), no `scripts/`, no missing `references/…` file, ~190 KiB per skill, and a real
+directory — a symlink is skipped in silence.
+
 ## Commands
 
 ```bash
@@ -152,8 +181,9 @@ npm run build            # tsc type-check (swc does not type-check during tests)
 npm test                 # unit tests only, no AWS calls
 npm test -- --coverage   # enforces the coverage floor in jest.config.js
 npm run test:integration # live Agent Space; RUN_BILLABLE_TESTS=1 adds real investigations
-npx tsx scripts/show-audit-records.ts   # print the audit records for every path, no AWS calls
+npx tsx scripts/show-audit-records.ts 2>&1   # print the audit records for every path, no AWS calls
 
+npm test -- skills                              # validate skills/ after copying a skill in
 npm run deploy:skills -- -c agentSpaceId=<id>   # upload every skill under skills/
 npx cdk diff CustomSkillsStack -c enableCustomSkills=true -c agentSpaceId=<id>   # preview
 ```
